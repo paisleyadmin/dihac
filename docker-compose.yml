@@ -1,0 +1,226 @@
+version: '3.8'
+
+services:
+  # MySQL Database
+  mysql:
+    image: mysql:8.0
+    container_name: dihac-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-dihac}
+      MYSQL_USER: ${MYSQL_USER:-dihac_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-dihac_password}
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./backend/database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - dihac-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # API Gateway
+  api-gateway:
+    build:
+      context: ./backend/api-gateway
+      dockerfile: Dockerfile
+    container_name: dihac-api-gateway
+    ports:
+      - "8000:8000"
+    environment:
+      - USER_SERVICE_URL=http://user-service:8001
+      - CONVERSATION_SERVICE_URL=http://conversation-service:8002
+      - ANALYSIS_SERVICE_URL=http://analysis-service:8003
+      - LEGAL_RESEARCH_SERVICE_URL=http://legal-research-service:8004
+      - REPORT_SERVICE_URL=http://report-service:8005
+      - EVIDENCE_SERVICE_URL=http://evidence-service:8006
+      - LLM_SERVICE_URL=http://llm-service:8007
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - dihac-network
+    volumes:
+      - ./backend/api-gateway:/app
+
+  # User Service
+  user-service:
+    build:
+      context: ./backend/services/user-service
+      dockerfile: Dockerfile
+    container_name: dihac-user-service
+    ports:
+      - "8001:8001"
+    environment:
+      - DATABASE_URL=mysql+pymysql://${MYSQL_USER:-dihac_user}:${MYSQL_PASSWORD:-dihac_password}@mysql:3306/${MYSQL_DATABASE:-dihac}
+      - JWT_SECRET=${JWT_SECRET:-your-secret-key-change-in-production}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - FACEBOOK_APP_ID=${FACEBOOK_APP_ID}
+      - FACEBOOK_APP_SECRET=${FACEBOOK_APP_SECRET}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - dihac-network
+    volumes:
+      - ./backend/services/user-service:/app
+
+  # Conversation Service
+  conversation-service:
+    build:
+      context: ./backend/services/conversation-service
+      dockerfile: Dockerfile
+    container_name: dihac-conversation-service
+    ports:
+      - "8002:8002"
+    environment:
+      - DATABASE_URL=mysql+pymysql://${MYSQL_USER:-dihac_user}:${MYSQL_PASSWORD:-dihac_password}@mysql:3306/${MYSQL_DATABASE:-dihac}
+      - ANALYSIS_SERVICE_URL=http://llm-service:8007
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - dihac-network
+    volumes:
+      - ./backend/services/conversation-service:/app
+
+  # Analysis Service
+  analysis-service:
+    build:
+      context: ./backend/services/analysis-service
+      dockerfile: Dockerfile
+    container_name: dihac-analysis-service
+    ports:
+      - "8003:8003"
+    environment:
+      - DATABASE_URL=mysql+pymysql://${MYSQL_USER:-dihac_user}:${MYSQL_PASSWORD:-dihac_password}@mysql:3306/${MYSQL_DATABASE:-dihac}
+      - LLM_SERVICE_URL=http://llm-service:8007
+      - LEGAL_RESEARCH_SERVICE_URL=http://legal-research-service:8004
+      - RAG_ENABLED=${RAG_ENABLED:-true}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - dihac-network
+    volumes:
+      - ./backend/services/analysis-service:/app
+      - rag_data:/app/rag_data
+
+  # Legal Research Service
+  legal-research-service:
+    build:
+      context: ./backend/services/legal-research-service
+      dockerfile: Dockerfile
+    container_name: dihac-legal-research-service
+    ports:
+      - "8004:8004"
+    environment:
+      - DATABASE_URL=mysql+pymysql://${MYSQL_USER:-dihac_user}:${MYSQL_PASSWORD:-dihac_password}@mysql:3306/${MYSQL_DATABASE:-dihac}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - dihac-network
+    volumes:
+      - ./backend/services/legal-research-service:/app
+
+  # Report Service
+  report-service:
+    build:
+      context: ./backend/services/report-service
+      dockerfile: Dockerfile
+    container_name: dihac-report-service
+    ports:
+      - "8005:8005"
+    environment:
+      - DATABASE_URL=mysql+pymysql://${MYSQL_USER:-dihac_user}:${MYSQL_PASSWORD:-dihac_password}@mysql:3306/${MYSQL_DATABASE:-dihac}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - dihac-network
+    volumes:
+      - ./backend/services/report-service:/app
+
+  # Evidence Service
+  evidence-service:
+    build:
+      context: ./backend/services/evidence-service
+      dockerfile: Dockerfile
+    container_name: dihac-evidence-service
+    ports:
+      - "8006:8006"
+    environment:
+      - DATABASE_URL=mysql+pymysql://${MYSQL_USER:-dihac_user}:${MYSQL_PASSWORD:-dihac_password}@mysql:3306/${MYSQL_DATABASE:-dihac}
+      - UPLOAD_DIR=/app/uploads
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - dihac-network
+    volumes:
+      - ./backend/services/evidence-service:/app
+      - evidence_uploads:/app/uploads
+
+  # Ollama LLM Container
+  ollama:
+    image: ollama/ollama:latest
+    container_name: dihac-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - dihac-network
+    # Uncomment for GPU support in production (requires nvidia-docker)
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:11434/api/tags || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
+
+  # LLM Service
+  llm-service:
+    build:
+      context: ./backend/services/llm-service
+      dockerfile: Dockerfile
+    container_name: dihac-llm-service
+    ports:
+      - "8007:8007"
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-1.5-flash}
+      - PROVIDER_PRIORITY=${PROVIDER_PRIORITY:-gemini,ollama}
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama2}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama2}
+      - FALLBACK_MODEL=${FALLBACK_MODEL:-mistral}
+    depends_on:
+      - ollama
+    networks:
+      - dihac-network
+    volumes:
+      - ./backend/services/llm-service:/app
+
+volumes:
+  mysql_data:
+  rag_data:
+  evidence_uploads:
+  ollama_data:
+
+networks:
+  dihac-network:
+    driver: bridge
+

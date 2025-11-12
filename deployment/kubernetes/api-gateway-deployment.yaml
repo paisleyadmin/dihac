@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dihac-api-gateway
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: dihac-api-gateway
+  template:
+    metadata:
+      labels:
+        app: dihac-api-gateway
+    spec:
+      containers:
+      - name: api-gateway
+        image: dihac/api-gateway:latest
+        ports:
+        - containerPort: 8000
+        env:
+        - name: USER_SERVICE_URL
+          value: "http://dihac-user-service:8001"
+        - name: CONVERSATION_SERVICE_URL
+          value: "http://dihac-conversation-service:8002"
+        - name: ANALYSIS_SERVICE_URL
+          value: "http://dihac-analysis-service:8003"
+        - name: LEGAL_RESEARCH_SERVICE_URL
+          value: "http://dihac-legal-research-service:8004"
+        - name: REPORT_SERVICE_URL
+          value: "http://dihac-report-service:8005"
+        - name: EVIDENCE_SERVICE_URL
+          value: "http://dihac-evidence-service:8006"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dihac-api-gateway
+spec:
+  selector:
+    app: dihac-api-gateway
+  ports:
+  - port: 80
+    targetPort: 8000
+  type: LoadBalancer
+
