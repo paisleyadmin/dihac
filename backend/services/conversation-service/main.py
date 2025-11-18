@@ -1,8 +1,10 @@
 """
 Conversation Service - Handles chat/voice interactions and conversation management
 """
-from fastapi import FastAPI, HTTPException, Depends, status, File, UploadFile, Form
+from fastapi import FastAPI, HTTPException, Depends, status, File, UploadFile, Form, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, Enum, ForeignKey, func
 from sqlalchemy.ext.declarative import declarative_base
@@ -20,6 +22,15 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="DIHAC Conversation Service", version="1.0.0")
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    logger.error(f"Validation error: {exc.errors()}")
+    logger.error(f"Request body: {exc.body}")
+    return JSONResponse(
+        status_code=422,
+        content={"detail": exc.errors(), "body": str(exc.body)[:200]}
+    )
 
 # Database setup
 DATABASE_URL = os.getenv("DATABASE_URL", "mysql+pymysql://dihac_user:dihac_password@localhost:3306/dihac")
@@ -149,8 +160,21 @@ async def call_analysis_service(case_id: int, message: str, conversation_history
     try:
         # Extended timeout for CPU-based LLM inference (will be faster with GPU in production)
         async with httpx.AsyncClient(timeout=300.0) as client:  # 5 minutes
+            # If no message but files provided, generate a message about the files
+            user_message = message
+            if not user_message and files_data:
+                file_types = []
+                for f in files_data:
+                    if f["content_type"].startswith("image"):
+                        file_types.append("image")
+                    elif f["content_type"].startswith("video"):
+                        file_types.append("video")
+                    else:
+                        file_types.append("document")
+                user_message = f"I'm uploading {len(files_data)} file(s) as evidence: {', '.join(file_types)}. Please analyze these."
+            
             payload = {
-                "user_message": message,
+                "user_message": user_message,
                 "conversation_history": conversation_history,
                 "case_context": {"case_id": case_id}
             }
@@ -184,7 +208,7 @@ async def health_check():
 
 @app.post("/api/message", response_model=MessageResponse)
 async def send_message(
-    message: str = Form(...),
+    message: str = Form(""),
     case_id: Optional[int] = Form(None),
     message_type: str = Form("text"),
     files: List[UploadFile] = File(default=[]),
@@ -193,6 +217,14 @@ async def send_message(
 ):
     """Send a message with optional file attachments and get AI response"""
     
+    logger.info(f"Received message: '{message[:50] if message else '(empty)'}'")
+    logger.info(f"Case ID: {case_id}")
+    logger.info(f"Files count: {len(files) if files else 0}")
+    
+    # Validate that either message or files are provided
+    if not message and not files:
+        raise HTTPException(status_code=400, detail="Either message or files must be provided")
+    
     # Get user ID from token
     try:
         token = credentials.credentials
@@ -200,7 +232,11 @@ async def send_message(
         user_id: int = payload.get("sub")
         if user_id is None:
             raise HTTPException(status_code=401, detail="Invalid authentication credentials")
-    except JWTError:
+    except JWTError as e:
+        logger.error(f"JWT Error: {e}")
+        raise HTTPException(status_code=401, detail="Invalid authentication credentials")
+    except Exception as e:
+        logger.error(f"Unexpected error in authentication: {e}")
         raise HTTPException(status_code=401, detail="Invalid authentication credentials")
     
     # Process uploaded files
@@ -223,11 +259,20 @@ async def send_message(
         if not case:
             raise HTTPException(status_code=404, detail="Case not found")
     else:
-        # Create new case with generated title from first message
+        # Create new case with generated title from first message or file upload
+        if message:
+            case_title = generate_case_title(message)
+            case_description = message[:500] if len(message) > 500 else message
+        else:
+            # Generate title based on uploaded files
+            file_names = [f["filename"] for f in files_data]
+            case_title = f"Case with uploaded files: {', '.join(file_names[:3])}"
+            case_description = f"Case created with {len(files_data)} file(s)"
+        
         case = Case(
             user_id=user_id,
-            title=generate_case_title(message),
-            description=message[:500] if len(message) > 500 else message,
+            title=case_title,
+            description=case_description,
             status="in_progress"
         )
         db.add(case)
@@ -251,10 +296,11 @@ async def send_message(
     # Call analysis service with files
     analysis_result = await call_analysis_service(case.id, message, conversation_history, files_data)
     
-    # Save conversation
+    # Save conversation - use message or describe files
+    user_message_for_history = message if message else f"Uploaded {len(files_data)} file(s)"
     conversation = Conversation(
         case_id=case.id,
-        user_message=message,
+        user_message=user_message_for_history,
         system_response=analysis_result.get("response", ""),
         message_type=message_type
     )

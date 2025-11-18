@@ -313,12 +313,18 @@ const Dashboard = () => {
     } catch (error) {
       console.error('Error sending message:', error);
       console.error('Error response:', error.response?.data);
+      console.error('Error status:', error.response?.status);
+      console.error('Full error:', JSON.stringify(error.response?.data));
       
       if (error.response?.status === 401) {
         alert('Please log in to continue');
         setLoginModalOpen(true);
       } else {
-        alert(`Failed to send message: ${error.response?.data?.detail || error.message}`);
+        const errorMessage = error.response?.data?.detail || 
+                           JSON.stringify(error.response?.data) || 
+                           error.message || 
+                           'Unknown error';
+        alert(`Failed to send message: ${errorMessage}`);
       }
     } finally {
       setSending(false); // Hide loading state
@@ -334,6 +340,8 @@ const Dashboard = () => {
 
   const handleFileSelect = (event) => {
     const files = Array.from(event.target.files);
+    console.log('Files selected:', files.length);
+    
     const validFiles = files.filter(file => {
       const isImage = file.type.startsWith('image/');
       const isVideo = file.type.startsWith('video/');
@@ -358,6 +366,8 @@ const Dashboard = () => {
       return true;
     });
 
+    console.log('Valid files:', validFiles.length);
+
     // Create preview URLs for valid files
     const newFiles = validFiles.map(file => {
       let fileType = 'document';
@@ -372,7 +382,9 @@ const Dashboard = () => {
       };
     });
 
+    console.log('New files to attach:', newFiles);
     setAttachedFiles(prev => [...prev, ...newFiles]);
+    console.log('Attached files state updated');
   };
 
   const removeAttachedFile = (index) => {
@@ -1507,7 +1519,7 @@ const Dashboard = () => {
               type="file"
               id="file-upload"
               multiple
-              accept="image/*,video/*,.pdf,.doc,.docx,.txt"
+              accept="image/*,video/*,application/pdf,.pdf,application/msword,.doc,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx,text/plain,.txt"
               style={{ display: 'none' }}
               onChange={handleFileSelect}
             />

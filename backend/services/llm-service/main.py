@@ -23,7 +23,7 @@ app = FastAPI(title="DIHAC LLM Service", version="2.0.0")
 
 # Configuration - Provider priority order
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama2")
 
@@ -382,12 +382,10 @@ async def call_gemini(messages: List['Message'], files_data: Optional[List[Dict]
     try:
         logger.info(f"Calling Google Gemini with model: {GEMINI_MODEL}")
         
-        # Initialize Gemini model (use vision model if files are present)
+        # Initialize Gemini model (supports multimodal input)
         model_name = GEMINI_MODEL
         if files_data:
-            # Gemini 1.5 Flash supports multimodal input
-            model_name = "gemini-1.5-flash"
-            logger.info(f"Using vision model for {len(files_data)} file(s)")
+            logger.info(f"Using multimodal capabilities for {len(files_data)} file(s)")
         
         model = genai.GenerativeModel(model_name)
         
@@ -783,8 +781,27 @@ async def analyze_legal_case(request: LegalAnalysisRequest):
             if conv.get("system_response"):
                 messages.append(Message(role="assistant", content=conv["system_response"]))
         
-        # Add current user message
-        messages.append(Message(role="user", content=request.user_message))
+        # Extract text from document files if present (for providers without vision)
+        document_context = ""
+        if request.files:
+            for file_info in request.files:
+                content_type = file_info.get('content_type', '')
+                # Only extract text from documents, not images/videos
+                if not content_type.startswith('image/') and not content_type.startswith('video/'):
+                    try:
+                        file_bytes = base64.b64decode(file_info['data'])
+                        filename = file_info['filename']
+                        doc_text = extract_document_text(file_bytes, content_type, filename)
+                        if doc_text:
+                            document_context += f"\n\n--- Document: {filename} ---\n{doc_text}"
+                    except Exception as e:
+                        logger.error(f"Error extracting document text: {e}")
+        
+        # Add current user message with document context if available
+        user_message_content = request.user_message
+        if document_context:
+            user_message_content += f"\n\nDocument Evidence:{document_context}"
+        messages.append(Message(role="user", content=user_message_content))
         
         # Try providers in priority order
         llm_response = None
@@ -801,12 +818,22 @@ async def analyze_legal_case(request: LegalAnalysisRequest):
                     break
                     
             elif provider == "ollama":
-                # Ollama doesn't support vision yet, skip if files present
+                # Check if files contain images/videos (Ollama doesn't support vision)
+                has_visual_content = False
                 if request.files:
-                    logger.info("Skipping Ollama (no vision support for uploaded files)")
+                    for file_info in request.files:
+                        content_type = file_info.get('content_type', '')
+                        if content_type.startswith('image/') or content_type.startswith('video/'):
+                            has_visual_content = True
+                            break
+                
+                if has_visual_content:
+                    logger.info("Skipping Ollama (has images/videos, no vision support)")
                     continue
+                    
                 if await check_ollama_available():
                     logger.info("Trying Ollama...")
+                    # Ollama can still process text content from documents
                     llm_response = await call_ollama(messages, OLLAMA_MODEL)
                     if llm_response:
                         provider_used = "ollama"
