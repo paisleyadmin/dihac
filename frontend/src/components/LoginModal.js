@@ -10,7 +10,7 @@ import {
   Divider,
   IconButton,
 } from '@mui/material';
-import { Close, Google, Facebook } from '@mui/icons-material';
+import { Close, Facebook } from '@mui/icons-material';
 import { GoogleLogin } from '@react-oauth/google';
 import { useAuth } from '../contexts/AuthContext';
 import axios from 'axios';
@@ -22,7 +22,7 @@ const LoginModal = ({ open, onClose, onSwitchToRegister }) => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const { login } = useAuth();
+  const { login, loginWithToken } = useAuth();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -41,10 +41,10 @@ const LoginModal = ({ open, onClose, onSwitchToRegister }) => {
   // Handle Google OAuth login
   const handleGoogleLogin = async (credentialResponse) => {
     try {
-      const result = await axios.post(`${API_URL}/api/oauth/google`, {
+      const result = await axios.post(`${API_URL}/api/user/oauth/google`, {
         credential: credentialResponse.credential
       });
-      login(result.data.access_token);
+      loginWithToken(result.data.access_token);
       onClose();
     } catch (error) {
       setError('Google login failed. Please try again.');
@@ -66,8 +66,8 @@ const LoginModal = ({ open, onClose, onSwitchToRegister }) => {
   };
 
   return (
-    <Dialog 
-      open={open} 
+    <Dialog
+      open={open}
       onClose={handleClose}
       maxWidth="xs"
       fullWidth
@@ -93,18 +93,18 @@ const LoginModal = ({ open, onClose, onSwitchToRegister }) => {
         </IconButton>
 
         <DialogContent sx={{ p: 0 }}>
-          <Typography 
-            variant="h5" 
-            component="h2" 
-            gutterBottom 
+          <Typography
+            variant="h5"
+            component="h2"
+            gutterBottom
             align="center"
             sx={{ fontWeight: 600, mb: 1 }}
           >
             Welcome to DIHAC
           </Typography>
-          <Typography 
-            variant="body2" 
-            align="center" 
+          <Typography
+            variant="body2"
+            align="center"
             color="#9ca3af"
             sx={{ mb: 3 }}
           >

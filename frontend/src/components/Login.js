@@ -8,15 +8,20 @@ import {
   Typography,
   Box,
   Alert,
+  Divider,
 } from '@mui/material';
+import { GoogleLogin } from '@react-oauth/google';
+import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
+
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
 
 const Login = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const { login } = useAuth();
+  const { login, loginWithToken } = useAuth();
   const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
@@ -31,6 +36,19 @@ const Login = () => {
       setError(result.error);
     }
     setLoading(false);
+  };
+
+  const handleGoogleLogin = async (credentialResponse) => {
+    try {
+      const result = await axios.post(`${API_URL}/api/user/oauth/google`, {
+        credential: credentialResponse.credential
+      });
+      await loginWithToken(result.data.access_token);
+      navigate('/dashboard');
+    } catch (error) {
+      setError('Google login failed. Please try again.');
+      console.error('Google OAuth error:', error);
+    }
   };
 
   return (
@@ -56,6 +74,26 @@ const Login = () => {
                 {error}
               </Alert>
             )}
+
+            <Box sx={{ mb: 3 }}>
+              <GoogleLogin
+                onSuccess={handleGoogleLogin}
+                onError={() => {
+                  setError('Google login failed. Please try again.');
+                }}
+                theme="filled_blue"
+                size="large"
+                width="100%"
+                text="continue_with"
+              />
+            </Box>
+
+            <Divider sx={{ mb: 3 }}>
+              <Typography variant="body2" color="text.secondary">
+                OR
+              </Typography>
+            </Divider>
+
             <form onSubmit={handleSubmit}>
               <TextField
                 fullWidth

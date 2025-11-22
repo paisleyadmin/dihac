@@ -8,6 +8,9 @@ import Dashboard from './components/Dashboard';
 import CaseChat from './components/CaseChat';
 import CaseAnalysis from './components/CaseAnalysis';
 import PrivateRoute from './components/PrivateRoute';
+import CookiePolicyPopup from './components/CookiePolicyPopup';
+
+
 
 const theme = createTheme({
   palette: {
@@ -15,7 +18,7 @@ const theme = createTheme({
       main: '#1a237e',
     },
     secondary: {
-      main: '#3949ab',
+      main: '#994bff',
     },
     background: {
       default: '#f5f5f5',
@@ -25,37 +28,41 @@ const theme = createTheme({
 
 function App() {
   return (
-    <MuiThemeProvider theme={theme}>
-      <CssBaseline />
-      <ThemeProvider>
-        <AuthProvider>
-          <Router>
-            <Routes>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/dashboard" element={<Dashboard />} />
-              <Route
-                path="/case/:caseId"
-                element={
-                  <PrivateRoute>
-                    <CaseChat />
-                  </PrivateRoute>
-                }
-              />
-              <Route
-                path="/case/:caseId/analysis"
-                element={
-                  <PrivateRoute>
-                    <CaseAnalysis />
-                  </PrivateRoute>
-                }
-              />
-            </Routes>
-          </Router>
-        </AuthProvider>
-      </ThemeProvider>
-    </MuiThemeProvider>
+    <div>
+      <MuiThemeProvider theme={theme}>
+        <CssBaseline />
+        <ThemeProvider>
+          <AuthProvider>
+            <Router>
+              <Routes>
+                <Route path="/" element={<Dashboard />} />
+                <Route path="/dashboard" element={<Dashboard />} />
+                <Route
+                  path="/case/:caseId"
+                  element={
+                    <PrivateRoute>
+                      <CaseChat />
+                    </PrivateRoute>
+                  }
+                />
+                <Route
+                  path="/case/:caseId/analysis"
+                  element={
+                    <PrivateRoute>
+                      <CaseAnalysis />
+                    </PrivateRoute>
+                  }
+                />
+              </Routes>
+            </Router>
+
+            {/* Cookie Policy Popup */}
+            <CookiePolicyPopup />
+          </AuthProvider>
+        </ThemeProvider>
+      </MuiThemeProvider>
+    </div>
   );
 }
 
 export default App;
-

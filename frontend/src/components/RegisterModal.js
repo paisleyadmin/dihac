@@ -10,8 +10,12 @@ import {
   Divider,
   IconButton,
 } from '@mui/material';
-import { Close, Google, Facebook } from '@mui/icons-material';
+import { Close, Facebook } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
+import axios from 'axios';
+import { GoogleLogin } from '@react-oauth/google';
+
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
 
 const RegisterModal = ({ open, onClose, onSwitchToLogin }) => {
   const [formData, setFormData] = useState({
@@ -23,7 +27,7 @@ const RegisterModal = ({ open, onClose, onSwitchToLogin }) => {
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const { register, login } = useAuth();
+  const { register, login, loginWithToken } = useAuth();
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -47,9 +51,17 @@ const RegisterModal = ({ open, onClose, onSwitchToLogin }) => {
     setLoading(false);
   };
 
-  const handleGoogleLogin = () => {
-    // TODO: Implement Google OAuth
-    console.log('Google login clicked');
+  const handleGoogleLogin = async (credentialResponse) => {
+    try {
+      const result = await axios.post(`${API_URL}/api/user/oauth/google`, {
+        credential: credentialResponse.credential
+      });
+      loginWithToken(result.data.access_token);
+      onClose();
+    } catch (error) {
+      setError('Google signup failed. Please try again.');
+      console.error('Google OAuth error:', error);
+    }
   };
 
   const handleFacebookLogin = () => {
@@ -70,8 +82,8 @@ const RegisterModal = ({ open, onClose, onSwitchToLogin }) => {
   };
 
   return (
-    <Dialog 
-      open={open} 
+    <Dialog
+      open={open}
       onClose={handleClose}
       maxWidth="xs"
       fullWidth
@@ -97,18 +109,18 @@ const RegisterModal = ({ open, onClose, onSwitchToLogin }) => {
         </IconButton>
 
         <DialogContent sx={{ p: 0 }}>
-          <Typography 
-            variant="h5" 
-            component="h2" 
-            gutterBottom 
+          <Typography
+            variant="h5"
+            component="h2"
+            gutterBottom
             align="center"
             sx={{ fontWeight: 600, mb: 1 }}
           >
             Create Account
           </Typography>
-          <Typography 
-            variant="body2" 
-            align="center" 
+          <Typography
+            variant="body2"
+            align="center"
             color="#9ca3af"
             sx={{ mb: 3 }}
           >
@@ -123,25 +135,18 @@ const RegisterModal = ({ open, onClose, onSwitchToLogin }) => {
 
           {/* OAuth Buttons */}
           <Box sx={{ mb: 3 }}>
-            <Button
-              fullWidth
-              variant="outlined"
-              startIcon={<Google />}
-              onClick={handleGoogleLogin}
-              sx={{
-                mb: 1.5,
-                color: '#fff',
-                borderColor: '#3a3a3a',
-                textTransform: 'none',
-                py: 1.2,
-                '&:hover': {
-                  borderColor: '#4a4a4a',
-                  bgcolor: '#2a2a2a',
-                },
-              }}
-            >
-              Sign up with Google
-            </Button>
+            <Box sx={{ mb: 1.5 }}>
+              <GoogleLogin
+                onSuccess={handleGoogleLogin}
+                onError={() => {
+                  setError('Google signup failed. Please try again.');
+                }}
+                theme="filled_black"
+                size="large"
+                width="100%"
+                text="signup_with"
+              />
+            </Box>
             <Button
               fullWidth
               variant="outlined"

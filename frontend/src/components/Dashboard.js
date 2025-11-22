@@ -96,12 +96,8 @@ const Dashboard = () => {
     aiMessage: isDarkMode ? '#2d2d2d' : '#f3f4f6',
   };
 
-  // Show login modal if not authenticated
-  useEffect(() => {
-    if (!token && !loading) {
-      setLoginModalOpen(true);
-    }
-  }, [token, loading]);
+  // Don't auto-show login modal - let users try the app first
+  // Login modal will appear after 2 guest messages
 
   useEffect(() => {
     if (token) {
@@ -124,17 +120,17 @@ const Dashboard = () => {
 
   const deleteCase = async (caseId, event) => {
     event.stopPropagation(); // Prevent case selection when clicking delete
-    
+
     if (!window.confirm('Are you sure you want to delete this case? This action cannot be undone.')) {
       return;
     }
-    
+
     try {
       await axios.delete(`${API_URL}/api/conversation/cases/${caseId}`);
-      
+
       // Remove case from local state
       setCases(prevCases => prevCases.filter(c => c.id !== caseId));
-      
+
       // If the deleted case was the current one, clear the conversation
       if (currentCaseId === caseId) {
         setCurrentCaseId(null);
@@ -170,7 +166,7 @@ const Dashboard = () => {
     try {
       setLoading(true);
       const response = await axios.get(`${API_URL}/api/conversation/conversations/${caseId}`);
-      
+
       if (response.data && response.data.conversations) {
         // Convert the conversation history to our format
         const loadedConversation = [];
@@ -180,10 +176,10 @@ const Dashboard = () => {
             loadedConversation.push({ role: 'assistant', content: conv.system_response });
           }
         });
-        
+
         setConversation(loadedConversation);
         setCurrentCaseId(caseId);
-        
+
         // Load analysis data if available
         if (response.data.analysis) {
           setCaseAnalysis(response.data.analysis);
@@ -201,16 +197,16 @@ const Dashboard = () => {
 
   const handleSendMessage = async () => {
     if (!message.trim() && attachedFiles.length === 0) return;
-    
-    // Check if guest user has reached the limit
-    if (!token && guestMessageCount >= 1) {
+
+    // Check if guest user has reached the limit (2 free messages)
+    if (!token && guestMessageCount >= 2) {
       setLoginModalOpen(true);
       return;
     }
-    
+
     // Add user message to conversation immediately
-    const userMsg = { 
-      role: 'user', 
+    const userMsg = {
+      role: 'user',
       content: message,
       attachments: attachedFiles.map(f => ({ name: f.name, type: f.type }))
     };
@@ -219,12 +215,12 @@ const Dashboard = () => {
     const currentFiles = attachedFiles;
     setMessage(''); // Clear input immediately
     setAttachedFiles([]); // Clear attachments
-    
+
     setSending(true); // Show loading state
     try {
       console.log('Sending message:', currentMessage);
       console.log('With files:', currentFiles.length);
-      
+
       // For logged-in users, save to backend
       if (token) {
         // Create FormData to handle file uploads
@@ -234,40 +230,40 @@ const Dashboard = () => {
         if (currentCaseId) {
           formData.append('case_id', currentCaseId.toString());
         }
-        
+
         // Add files to FormData
         currentFiles.forEach((fileObj) => {
           formData.append('files', fileObj.file);
         });
-        
+
         const response = await axios.post(`${API_URL}/api/conversation/message`, formData, {
           headers: {
             'Authorization': `Bearer ${token}`,
             // Don't set Content-Type - let axios set it with boundary
           },
         });
-        
+
         console.log('Response:', response.data);
-        
+
         if (response.data) {
           // Add AI response to conversation
-          const aiMsg = { 
-            role: 'assistant', 
-            content: response.data.system_response 
+          const aiMsg = {
+            role: 'assistant',
+            content: response.data.system_response
           };
           setConversation(prev => [...prev, aiMsg]);
-          
+
           // Store case_id for subsequent messages and refresh cases list if new case
           const isNewCase = !currentCaseId && response.data.case_id;
           if (response.data.case_id) {
             setCurrentCaseId(response.data.case_id);
           }
-          
+
           // Refresh cases list if a new case was created
           if (isNewCase) {
             fetchCases();
           }
-          
+
           // Set analysis data from API response
           if (response.data.analysis) {
             setCaseAnalysis(response.data.analysis);
@@ -281,22 +277,22 @@ const Dashboard = () => {
           conversation_history: [],
           case_context: {}
         });
-        
+
         console.log('Guest response:', response.data);
-        
+
         if (response.data && response.data.response) {
-          const aiMsg = { 
-            role: 'assistant', 
-            content: response.data.response 
+          const aiMsg = {
+            role: 'assistant',
+            content: response.data.response
           };
           setConversation(prev => [...prev, aiMsg]);
           setGuestMessageCount(prev => prev + 1);
-          
+
           // Set analysis data from API response for guest users too
           if (response.data.analysis) {
             setCaseAnalysis(response.data.analysis);
           }
-          
+
           // After first message, show a prompt to sign in
           if (guestMessageCount === 0) {
             setTimeout(() => {
@@ -315,15 +311,15 @@ const Dashboard = () => {
       console.error('Error response:', error.response?.data);
       console.error('Error status:', error.response?.status);
       console.error('Full error:', JSON.stringify(error.response?.data));
-      
+
       if (error.response?.status === 401) {
         alert('Please log in to continue');
         setLoginModalOpen(true);
       } else {
-        const errorMessage = error.response?.data?.detail || 
-                           JSON.stringify(error.response?.data) || 
-                           error.message || 
-                           'Unknown error';
+        const errorMessage = error.response?.data?.detail ||
+          JSON.stringify(error.response?.data) ||
+          error.message ||
+          'Unknown error';
         alert(`Failed to send message: ${errorMessage}`);
       }
     } finally {
@@ -341,20 +337,20 @@ const Dashboard = () => {
   const handleFileSelect = (event) => {
     const files = Array.from(event.target.files);
     console.log('Files selected:', files.length);
-    
+
     const validFiles = files.filter(file => {
       const isImage = file.type.startsWith('image/');
       const isVideo = file.type.startsWith('video/');
-      const isDocument = file.type === 'application/pdf' || 
-                        file.type === 'application/msword' ||
-                        file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
-                        file.type === 'text/plain' ||
-                        file.name.endsWith('.pdf') ||
-                        file.name.endsWith('.doc') ||
-                        file.name.endsWith('.docx') ||
-                        file.name.endsWith('.txt');
+      const isDocument = file.type === 'application/pdf' ||
+        file.type === 'application/msword' ||
+        file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+        file.type === 'text/plain' ||
+        file.name.endsWith('.pdf') ||
+        file.name.endsWith('.doc') ||
+        file.name.endsWith('.docx') ||
+        file.name.endsWith('.txt');
       const isValidSize = file.size <= 50 * 1024 * 1024; // 50MB limit
-      
+
       if (!isImage && !isVideo && !isDocument) {
         alert(`${file.name} is not a valid file type. Supported: Images, Videos, PDF, DOC, DOCX, TXT`);
         return false;
@@ -373,7 +369,7 @@ const Dashboard = () => {
       let fileType = 'document';
       if (file.type.startsWith('image/')) fileType = 'image';
       else if (file.type.startsWith('video/')) fileType = 'video';
-      
+
       return {
         file,
         preview: fileType === 'image' ? URL.createObjectURL(file) : null,
@@ -418,7 +414,7 @@ const Dashboard = () => {
         doc.setTextColor(...color);
         if (isBold) doc.setFont(undefined, 'bold');
         else doc.setFont(undefined, 'normal');
-        
+
         const lines = doc.splitTextToSize(text, maxWidth);
         lines.forEach(line => {
           if (yPosition > 280) {
@@ -438,17 +434,17 @@ const Dashboard = () => {
       doc.setFontSize(24);
       doc.setFont(undefined, 'bold');
       doc.text('DIHAC Legal Case Report', pageWidth / 2, 25, { align: 'center' });
-      
+
       yPosition = 50;
       doc.setTextColor(0, 0, 0);
 
       // Date
-      addText(`Generated: ${new Date().toLocaleDateString('en-US', { 
-        year: 'numeric', 
-        month: 'long', 
-        day: 'numeric' 
+      addText(`Generated: ${new Date().toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
       })}`, 10, false, [100, 100, 100]);
-      
+
       yPosition += 5;
       doc.setDrawColor(200, 200, 200);
       doc.line(margin, yPosition, pageWidth - margin, yPosition);
@@ -457,16 +453,16 @@ const Dashboard = () => {
       // Case Description - Professional Summary (moved to top)
       if (conversation && conversation.length > 0) {
         addText('Case Description', 16, true, [37, 99, 235]);
-        
+
         // Extract user messages to create a professional summary
         const userMessages = conversation
           .filter(msg => msg.role === 'user')
           .map(msg => msg.content)
           .join(' ');
-        
+
         // Create a structured summary
         const summaryParts = [];
-        
+
         // Problem statement (first user message)
         if (conversation.length > 0 && conversation[0].role === 'user') {
           summaryParts.push({
@@ -474,24 +470,24 @@ const Dashboard = () => {
             content: conversation[0].content
           });
         }
-        
+
         // Additional details (subsequent user messages)
         const additionalDetails = conversation
           .filter((msg, idx) => msg.role === 'user' && idx > 0)
           .map(msg => msg.content);
-        
+
         if (additionalDetails.length > 0) {
           summaryParts.push({
             label: 'Additional Information Provided',
             content: additionalDetails.join('. ')
           });
         }
-        
+
         // Key facts extracted from AI analysis
         const aiResponses = conversation
           .filter(msg => msg.role === 'assistant')
           .map(msg => msg.content);
-        
+
         if (aiResponses.length > 0) {
           // Extract key facts from first AI response
           const firstResponse = aiResponses[0];
@@ -503,14 +499,14 @@ const Dashboard = () => {
             });
           }
         }
-        
+
         // Render summary sections
         summaryParts.forEach((part, index) => {
           addText(part.label + ':', 11, true, [0, 0, 0]);
           addText(part.content, 10);
           yPosition += 2;
         });
-        
+
         yPosition += 5;
         doc.setDrawColor(200, 200, 200);
         doc.line(margin, yPosition, pageWidth - margin, yPosition);
@@ -528,7 +524,7 @@ const Dashboard = () => {
         addText('Potentially Applicable Laws & Statutes', 16, true, [37, 99, 235]);
         addText('The following laws may be relevant to this case:', 10, false, [80, 80, 80]);
         yPosition += 2;
-        
+
         caseAnalysis.laws.forEach((law, index) => {
           addText(`${index + 1}. ${law.title}`, 11, true);
           if (law.description) {
@@ -544,7 +540,7 @@ const Dashboard = () => {
         addText('Relevant Precedent Cases', 16, true, [37, 99, 235]);
         addText('The following cases may provide relevant legal precedent:', 10, false, [80, 80, 80]);
         yPosition += 2;
-        
+
         caseAnalysis.precedents.forEach((precedent, index) => {
           addText(`${index + 1}. ${precedent.name}`, 11, true);
           if (precedent.description) {
@@ -569,7 +565,7 @@ const Dashboard = () => {
         addText('Attorney Referrals (Public Records)', 16, true, [37, 99, 235]);
         addText('IMPORTANT: These attorneys are sourced from public state bar records. This is NOT a recommendation or endorsement. You must independently verify credentials, experience, and suitability for your specific case.', 9, false, [200, 0, 0]);
         yPosition += 5;
-        
+
         caseAnalysis.lawyers.forEach((lawyer, index) => {
           if (!lawyer.isSearchLink) {
             addText(`${index + 1}. ${lawyer.name}`, 11, true);
@@ -603,7 +599,7 @@ const Dashboard = () => {
       // Save the PDF
       const fileName = `DIHAC_Case_Report_${new Date().toISOString().split('T')[0]}.pdf`;
       doc.save(fileName);
-      
+
       console.log('Case report generated successfully');
     } catch (error) {
       console.error('Error generating report:', error);
@@ -611,7 +607,7 @@ const Dashboard = () => {
     }
   };
 
-  const filteredCases = cases.filter(caseItem => 
+  const filteredCases = cases.filter(caseItem =>
     caseItem.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
     caseItem.description?.toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -619,8 +615,8 @@ const Dashboard = () => {
   return (
     <Box sx={{ display: 'flex', height: '100vh', bgcolor: isDarkMode ? '#1a1a1a' : '#f5f5f5' }}>
       {/* Login Modal */}
-      <LoginModal 
-        open={loginModalOpen} 
+      <LoginModal
+        open={loginModalOpen}
         onClose={() => setLoginModalOpen(false)}
         onSwitchToRegister={() => {
           setLoginModalOpen(false);
@@ -629,8 +625,8 @@ const Dashboard = () => {
       />
 
       {/* Register Modal */}
-      <RegisterModal 
-        open={registerModalOpen} 
+      <RegisterModal
+        open={registerModalOpen}
         onClose={() => setRegisterModalOpen(false)}
         onSwitchToLogin={() => {
           setRegisterModalOpen(false);
@@ -766,8 +762,8 @@ const Dashboard = () => {
         <Box sx={{ flexGrow: 1, overflow: 'auto', px: 1 }}>
           <List>
             {filteredCases.map((caseItem) => (
-              <ListItem 
-                key={caseItem.id} 
+              <ListItem
+                key={caseItem.id}
                 disablePadding
                 secondaryAction={
                   <IconButton
@@ -945,7 +941,7 @@ const Dashboard = () => {
             <Box>
               <Typography variant="body2" sx={{ fontWeight: 500 }}>
                 {token ? (
-                  user?.first_name && user?.last_name 
+                  user?.first_name && user?.last_name
                     ? `${user.first_name} ${user.last_name}`
                     : user?.first_name || user?.email || 'User Profile'
                 ) : (
@@ -1100,8 +1096,8 @@ const Dashboard = () => {
         <Box sx={{ flexGrow: 1, overflow: 'auto', px: 1 }}>
           <List>
             {filteredCases.map((caseItem) => (
-              <ListItem 
-                key={caseItem.id} 
+              <ListItem
+                key={caseItem.id}
                 disablePadding
                 secondaryAction={
                   <IconButton
@@ -1183,7 +1179,7 @@ const Dashboard = () => {
             <Box>
               <Typography variant="body2" sx={{ fontWeight: 500 }}>
                 {token ? (
-                  user?.first_name && user?.last_name 
+                  user?.first_name && user?.last_name
                     ? `${user.first_name} ${user.last_name}`
                     : user?.first_name || user?.email || 'User Profile'
                 ) : (
@@ -1278,119 +1274,119 @@ const Dashboard = () => {
                 width: '100%',
               }}
             >
-          {sending && conversation.length === 0 ? (
-            <>
-              <CircularProgress size={60} sx={{ color: '#2563eb', mb: 3, mt: 20 }} />
-              <Typography
-                variant="h5"
-                sx={{
-                  fontWeight: 600,
-                  mb: 2,
-                  color: '#f9fafb',
-                }}
-              >
-                Analyzing Your Case...
-              </Typography>
-              <Typography
-                variant="body1"
-                sx={{
-                  color: '#9ca3af',
-                  textAlign: 'center',
-                }}
-              >
-                Our AI is processing your request. This may take 2-3 minutes.
-                <br />
-                Please wait...
-              </Typography>
-            </>
-          ) : conversation.length === 0 ? (
-            <>
-              <Typography
-                variant="h4"
-                sx={{
-                  fontWeight: 600,
-                  mb: 2,
-                  color: '#f9fafb',
-                }}
-              >
-                Start Your Case
-              </Typography>
-              <Typography
-                variant="body1"
-                sx={{
-                  color: '#9ca3af',
-                  mb: 2,
-                }}
-              >
-                Describe your situation by typing below or use the microphone to talk.
-              </Typography>
+              {sending && conversation.length === 0 ? (
+                <>
+                  <CircularProgress size={60} sx={{ color: '#2563eb', mb: 3, mt: 20 }} />
+                  <Typography
+                    variant="h5"
+                    sx={{
+                      fontWeight: 600,
+                      mb: 2,
+                      color: '#f9fafb',
+                    }}
+                  >
+                    Analyzing Your Case...
+                  </Typography>
+                  <Typography
+                    variant="body1"
+                    sx={{
+                      color: '#9ca3af',
+                      textAlign: 'center',
+                    }}
+                  >
+                    Our AI is processing your request. This may take 2-3 minutes.
+                    <br />
+                    Please wait...
+                  </Typography>
+                </>
+              ) : conversation.length === 0 ? (
+                <>
+                  <Typography
+                    variant="h4"
+                    sx={{
+                      fontWeight: 600,
+                      mb: 2,
+                      color: '#f9fafb',
+                    }}
+                  >
+                    Start Your Case
+                  </Typography>
+                  <Typography
+                    variant="body1"
+                    sx={{
+                      color: '#9ca3af',
+                      mb: 2,
+                    }}
+                  >
+                    Describe your situation by typing below or use the microphone to talk.
+                  </Typography>
 
-              {/* Legal Disclaimer */}
-              <Box sx={{ 
-                bgcolor: isDarkMode ? '#1a1a1a' : '#f9fafb',
-                border: `1px solid ${colors.border}`,
-                p: 1.5,
-                borderRadius: 1,
-                mb: 4,
-              }}>
-                <Typography sx={{ fontSize: { xs: '0.65rem', sm: '0.7rem' }, color: colors.textSecondary }}>
-                  ⚠️ <strong>DISCLAIMER:</strong> This tool provides informational analysis only and is NOT legal advice. 
-                  No attorney-client relationship is created. All case assessments, legal information, and attorney listings 
-                  are for informational purposes only. Independently verify all information. Consult a licensed attorney 
-                  for legal advice specific to your situation.
-                </Typography>
-              </Box>
-            </>
-          ) : (
-            <Box sx={{ width: '100%' }}>
-              {conversation.map((msg, index) => (
-                <Box
-                  key={index}
-                  sx={{
-                    display: 'flex',
-                    justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start',
-                    mb: 2,
-                  }}
-                >
-                  <Box
-                    sx={{
-                      maxWidth: { xs: '90%', sm: '80%', md: '70%' },
-                      bgcolor: msg.role === 'user' ? colors.userMessage : colors.aiMessage,
-                      color: msg.role === 'user' ? '#fff' : colors.text,
-                      px: { xs: 2, sm: 3 },
-                      py: 2,
-                      borderRadius: 2,
-                      boxShadow: isDarkMode ? '0 2px 4px rgba(0,0,0,0.2)' : '0 2px 4px rgba(0,0,0,0.1)',
-                    }}
-                  >
-                    <Typography variant="body1" sx={{ whiteSpace: 'pre-wrap', fontSize: { xs: '0.9rem', sm: '1rem' } }}>
-                      {msg.content}
+                  {/* Legal Disclaimer */}
+                  <Box sx={{
+                    bgcolor: isDarkMode ? '#1a1a1a' : '#f9fafb',
+                    border: `1px solid ${colors.border}`,
+                    p: 1.5,
+                    borderRadius: 1,
+                    mb: 4,
+                  }}>
+                    <Typography sx={{ fontSize: { xs: '0.65rem', sm: '0.7rem' }, color: colors.textSecondary }}>
+                      ⚠️ <strong>DISCLAIMER:</strong> This tool provides informational analysis only and is NOT legal advice.
+                      No attorney-client relationship is created. All case assessments, legal information, and attorney listings
+                      are for informational purposes only. Independently verify all information. Consult a licensed attorney
+                      for legal advice specific to your situation.
                     </Typography>
                   </Box>
-                </Box>
-              ))}
-              {sending && (
-                <Box sx={{ display: 'flex', justifyContent: 'flex-start', mb: 2 }}>
-                  <Box
-                    sx={{
-                      bgcolor: colors.aiMessage,
-                      px: 3,
-                      py: 2,
-                      borderRadius: 2,
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 1,
-                    }}
-                  >
-                    <CircularProgress size={20} sx={{ color: '#2563eb' }} />
-                    <Typography variant="body2" sx={{ color: colors.textSecondary }}>
-                      AI is thinking...
-                    </Typography>
-                  </Box>
+                </>
+              ) : (
+                <Box sx={{ width: '100%' }}>
+                  {conversation.map((msg, index) => (
+                    <Box
+                      key={index}
+                      sx={{
+                        display: 'flex',
+                        justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start',
+                        mb: 2,
+                      }}
+                    >
+                      <Box
+                        sx={{
+                          maxWidth: { xs: '90%', sm: '80%', md: '70%' },
+                          bgcolor: msg.role === 'user' ? colors.userMessage : colors.aiMessage,
+                          color: msg.role === 'user' ? '#fff' : colors.text,
+                          px: { xs: 2, sm: 3 },
+                          py: 2,
+                          borderRadius: 2,
+                          boxShadow: isDarkMode ? '0 2px 4px rgba(0,0,0,0.2)' : '0 2px 4px rgba(0,0,0,0.1)',
+                        }}
+                      >
+                        <Typography variant="body1" sx={{ whiteSpace: 'pre-wrap', fontSize: { xs: '0.9rem', sm: '1rem' } }}>
+                          {msg.content}
+                        </Typography>
+                      </Box>
+                    </Box>
+                  ))}
+                  {sending && (
+                    <Box sx={{ display: 'flex', justifyContent: 'flex-start', mb: 2 }}>
+                      <Box
+                        sx={{
+                          bgcolor: colors.aiMessage,
+                          px: 3,
+                          py: 2,
+                          borderRadius: 2,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 1,
+                        }}
+                      >
+                        <CircularProgress size={20} sx={{ color: '#2563eb' }} />
+                        <Typography variant="body2" sx={{ color: colors.textSecondary }}>
+                          AI is thinking...
+                        </Typography>
+                      </Box>
+                    </Box>
+                  )}
                 </Box>
               )}
-            </Box>
-          )}
             </Box>
 
             {/* Bottom Input Area */}
@@ -1514,115 +1510,115 @@ const Dashboard = () => {
                   px: { xs: 0, sm: 2 },
                 }}
               >
-            {/* File Attachment Button */}
-            <input
-              type="file"
-              id="file-upload"
-              multiple
-              accept="image/*,video/*,application/pdf,.pdf,application/msword,.doc,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx,text/plain,.txt"
-              style={{ display: 'none' }}
-              onChange={handleFileSelect}
-            />
-            <label htmlFor="file-upload">
-              <IconButton
-                component="span"
-                sx={{
-                  bgcolor: colors.bgSecondary,
-                  border: `1px solid ${colors.border}`,
-                  width: { xs: 48, sm: 56 },
-                  height: { xs: 48, sm: 56 },
-                  '&:hover': {
-                    bgcolor: colors.bgTertiary,
-                    borderColor: '#2563eb',
-                  },
-                }}
-              >
-                <AttachFile sx={{ color: colors.text }} />
-              </IconButton>
-            </label>
+                {/* File Attachment Button */}
+                <input
+                  type="file"
+                  id="file-upload"
+                  multiple
+                  accept="image/*,video/*,application/pdf,.pdf,application/msword,.doc,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx,text/plain,.txt"
+                  style={{ display: 'none' }}
+                  onChange={handleFileSelect}
+                />
+                <label htmlFor="file-upload">
+                  <IconButton
+                    component="span"
+                    sx={{
+                      bgcolor: colors.bgSecondary,
+                      border: `1px solid ${colors.border}`,
+                      width: { xs: 48, sm: 56 },
+                      height: { xs: 48, sm: 56 },
+                      '&:hover': {
+                        bgcolor: colors.bgTertiary,
+                        borderColor: '#2563eb',
+                      },
+                    }}
+                  >
+                    <AttachFile sx={{ color: colors.text }} />
+                  </IconButton>
+                </label>
 
-            <TextField
-              fullWidth
-              multiline
-              maxRows={4}
-              placeholder="Tell me about your situation..."
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              onKeyPress={handleKeyPress}
-              sx={{
-                '& .MuiOutlinedInput-root': {
-                  bgcolor: colors.bgSecondary,
-                  color: colors.text,
-                  borderRadius: 2,
-                  fontSize: { xs: '0.9rem', sm: '1rem' },
-                  '& fieldset': {
-                    borderColor: colors.border,
-                  },
-                  '&:hover fieldset': {
-                    borderColor: colors.borderLight,
-                  },
-                  '&.Mui-focused fieldset': {
-                    borderColor: '#2563eb',
-                  },
-                },
-                '& .MuiInputBase-input::placeholder': {
-                  color: colors.textSecondary,
-                  opacity: 1,
-                },
-              }}
-            />
-            <Button
-              variant="contained"
-              onClick={handleSendMessage}
-              disabled={(!message.trim() && attachedFiles.length === 0) || sending}
-              sx={{
-                bgcolor: isDarkMode ? '#6b7280' : '#2563eb',
-                minWidth: { xs: 60, sm: 80 },
-                height: 56,
-                borderRadius: 2,
-                display: { xs: 'none', sm: 'flex' },
-                '&:hover': { bgcolor: isDarkMode ? '#4b5563' : '#1d4ed8' },
-                '&.Mui-disabled': {
-                  bgcolor: isDarkMode ? '#374151' : '#9ca3af',
-                  color: isDarkMode ? '#6b7280' : '#d1d5db',
-                },
-              }}
-            >
-              {sending ? <CircularProgress size={24} sx={{ color: '#fff' }} /> : 'Send'}
-            </Button>
-            <IconButton
-              onClick={handleSendMessage}
-              disabled={(!message.trim() && attachedFiles.length === 0) || sending}
-              sx={{
-                display: { xs: 'flex', sm: 'none' },
-                bgcolor: isDarkMode ? '#6b7280' : '#2563eb',
-                color: '#fff',
-                width: 48,
-                height: 48,
-                '&:hover': {
-                  bgcolor: isDarkMode ? '#4b5563' : '#1d4ed8',
-                },
-                '&.Mui-disabled': {
-                  bgcolor: isDarkMode ? '#374151' : '#9ca3af',
-                },
-              }}
-            >
-              {sending ? <CircularProgress size={20} sx={{ color: '#fff' }} /> : <Send />}
-            </IconButton>
-            <IconButton
-              sx={{
-                display: { xs: 'none', sm: 'flex' },
-                bgcolor: '#2563eb',
-                color: '#fff',
-                width: 56,
-                height: 56,
-                '&:hover': { bgcolor: '#1d4ed8' },
-              }}
-            >
-              <Mic />
-            </IconButton>
-          </Box>
-        </Box>
+                <TextField
+                  fullWidth
+                  multiline
+                  maxRows={4}
+                  placeholder="Tell me about your situation..."
+                  value={message}
+                  onChange={(e) => setMessage(e.target.value)}
+                  onKeyPress={handleKeyPress}
+                  sx={{
+                    '& .MuiOutlinedInput-root': {
+                      bgcolor: colors.bgSecondary,
+                      color: colors.text,
+                      borderRadius: 2,
+                      fontSize: { xs: '0.9rem', sm: '1rem' },
+                      '& fieldset': {
+                        borderColor: colors.border,
+                      },
+                      '&:hover fieldset': {
+                        borderColor: colors.borderLight,
+                      },
+                      '&.Mui-focused fieldset': {
+                        borderColor: '#2563eb',
+                      },
+                    },
+                    '& .MuiInputBase-input::placeholder': {
+                      color: colors.textSecondary,
+                      opacity: 1,
+                    },
+                  }}
+                />
+                <Button
+                  variant="contained"
+                  onClick={handleSendMessage}
+                  disabled={(!message.trim() && attachedFiles.length === 0) || sending}
+                  sx={{
+                    bgcolor: isDarkMode ? '#6b7280' : '#2563eb',
+                    minWidth: { xs: 60, sm: 80 },
+                    height: 56,
+                    borderRadius: 2,
+                    display: { xs: 'none', sm: 'flex' },
+                    '&:hover': { bgcolor: isDarkMode ? '#4b5563' : '#1d4ed8' },
+                    '&.Mui-disabled': {
+                      bgcolor: isDarkMode ? '#374151' : '#9ca3af',
+                      color: isDarkMode ? '#6b7280' : '#d1d5db',
+                    },
+                  }}
+                >
+                  {sending ? <CircularProgress size={24} sx={{ color: '#fff' }} /> : 'Send'}
+                </Button>
+                <IconButton
+                  onClick={handleSendMessage}
+                  disabled={(!message.trim() && attachedFiles.length === 0) || sending}
+                  sx={{
+                    display: { xs: 'flex', sm: 'none' },
+                    bgcolor: isDarkMode ? '#6b7280' : '#2563eb',
+                    color: '#fff',
+                    width: 48,
+                    height: 48,
+                    '&:hover': {
+                      bgcolor: isDarkMode ? '#4b5563' : '#1d4ed8',
+                    },
+                    '&.Mui-disabled': {
+                      bgcolor: isDarkMode ? '#374151' : '#9ca3af',
+                    },
+                  }}
+                >
+                  {sending ? <CircularProgress size={20} sx={{ color: '#fff' }} /> : <Send />}
+                </IconButton>
+                <IconButton
+                  sx={{
+                    display: { xs: 'none', sm: 'flex' },
+                    bgcolor: '#2563eb',
+                    color: '#fff',
+                    width: 56,
+                    height: 56,
+                    '&:hover': { bgcolor: '#1d4ed8' },
+                  }}
+                >
+                  <Mic />
+                </IconButton>
+              </Box>
+            </Box>
           </Box>
 
           {/* Right Analysis Panel */}
@@ -1729,7 +1725,7 @@ const Dashboard = () => {
                   color: colors.text,
                 }}
               >
-                <AccordionSummary 
+                <AccordionSummary
                   expandIcon={<ExpandMore sx={{ color: colors.textSecondary }} />}
                   sx={{
                     '&:hover': { bgcolor: isDarkMode ? '#2d2d2d' : '#f9fafb' },
@@ -1755,7 +1751,7 @@ const Dashboard = () => {
                               sx={{
                                 color: '#2563eb',
                                 textDecoration: 'none',
-                                '&:hover': { 
+                                '&:hover': {
                                   textDecoration: 'underline',
                                   color: '#3b82f6',
                                 },
@@ -1783,7 +1779,7 @@ const Dashboard = () => {
                   color: colors.text,
                 }}
               >
-                <AccordionSummary 
+                <AccordionSummary
                   expandIcon={<ExpandMore sx={{ color: colors.textSecondary }} />}
                   sx={{
                     '&:hover': { bgcolor: isDarkMode ? '#2d2d2d' : '#f9fafb' },
@@ -1819,7 +1815,7 @@ const Dashboard = () => {
                               fontSize: { xs: '0.8rem', sm: '0.875rem' },
                               color: '#2563eb',
                               textDecoration: 'none',
-                              '&:hover': { 
+                              '&:hover': {
                                 textDecoration: 'underline',
                                 color: '#3b82f6',
                               },
@@ -1848,11 +1844,11 @@ const Dashboard = () => {
               </Accordion>
 
               {/* Recommended Lawyers */}
-              <Box 
-                sx={{ 
-                  bgcolor: colors.bgSecondary, 
-                  borderRadius: 2, 
-                  p: { xs: 2, sm: 2 }, 
+              <Box
+                sx={{
+                  bgcolor: colors.bgSecondary,
+                  borderRadius: 2,
+                  p: { xs: 2, sm: 2 },
                   border: `1px solid ${colors.border}`,
                 }}
               >
@@ -1862,22 +1858,22 @@ const Dashboard = () => {
                     Attorney Listings (Public Records)
                   </Typography>
                 </Box>
-                
+
                 {/* STRONG LEGAL DISCLAIMER */}
-                <Box sx={{ 
-                  bgcolor: isDarkMode ? '#1f1f1f' : '#fef3c7', 
+                <Box sx={{
+                  bgcolor: isDarkMode ? '#1f1f1f' : '#fef3c7',
                   border: `1px solid ${isDarkMode ? '#444' : '#fbbf24'}`,
-                  borderRadius: 1, 
-                  p: 1.5, 
-                  mb: 2 
+                  borderRadius: 1,
+                  p: 1.5,
+                  mb: 2
                 }}>
                   <Typography sx={{ fontSize: { xs: '0.65rem', sm: '0.7rem' }, color: isDarkMode ? '#fbbf24' : '#92400e', fontWeight: 600, mb: 0.5 }}>
                     ⚠️ IMPORTANT DISCLAIMER
                   </Typography>
                   <Typography sx={{ fontSize: { xs: '0.6rem', sm: '0.65rem' }, color: isDarkMode ? '#d1d5db' : '#78350f', lineHeight: 1.4 }}>
-                    The attorneys listed below are sourced from public records and state bar directories. This is NOT a recommendation or endorsement. 
-                    We do not verify credentials, specializations, or current standing. You MUST independently verify all information, including 
-                    bar status, disciplinary records, and qualifications before contacting any attorney. No attorney-client relationship is created 
+                    The attorneys listed below are sourced from public records and state bar directories. This is NOT a recommendation or endorsement.
+                    We do not verify credentials, specializations, or current standing. You MUST independently verify all information, including
+                    bar status, disciplinary records, and qualifications before contacting any attorney. No attorney-client relationship is created
                     by viewing this information. Consult your state bar association for verified attorney directories.
                   </Typography>
                 </Box>
@@ -1939,8 +1935,8 @@ const Dashboard = () => {
                       >
                         <Box sx={{ display: 'flex', gap: 1.5, flexGrow: 1, width: { xs: '100%', sm: 'auto' } }}>
                           <Avatar
-                            sx={{ 
-                              width: { xs: 36, sm: 40 }, 
+                            sx={{
+                              width: { xs: 36, sm: 40 },
                               height: { xs: 36, sm: 40 },
                               bgcolor: '#2563eb'
                             }}
